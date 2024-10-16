@@ -3,17 +3,16 @@ import threading
 import asyncio
 from bleak import BleakScanner
 import os
+import signal
+
 
 # Bluetooth connection settings
-DEVICE_NAME = "UV-PRO"  # Replace with your Bluetooth device name
+DEVICE_NAMES = ["UV-PRO", "VR-N76", "GA-5WB"] # List with possible device names
 DATA_CHANNEL_ID = 3      # Replace with your device's RFCOMM channel
 
 # TCP Server settings
 TCP_HOST = '0.0.0.0'  # Listen on all interfaces
 TCP_PORT = 8001       # TCP port number
-
-# File to store the MAC address
-MAC_FILE = 'device_mac.txt'
 
 async def find_bluetooth_device(device_name):
     """Scan for Bluetooth devices and return the MAC address of the specified device."""
@@ -28,20 +27,6 @@ async def find_bluetooth_device(device_name):
     print(f"Device '{device_name}' not found.")
     return None
 
-def save_mac_address(mac_address):
-    """Save the MAC address to a file."""
-    with open(MAC_FILE, 'w') as f:
-        f.write(mac_address)
-    print(f"MAC address saved: {mac_address}")
-
-def load_mac_address():
-    """Load the MAC address from a file if it exists."""
-    if os.path.exists(MAC_FILE):
-        with open(MAC_FILE, 'r') as f:
-            mac_address = f.read().strip()
-            print(f"Loaded MAC address from file: {mac_address}")
-            return mac_address
-    return None
 
 def connect_bluetooth(mac_address, channel):
     """Establish Bluetooth socket connection using RFCOMM protocol."""
@@ -55,11 +40,9 @@ def connect_bluetooth(mac_address, channel):
         print(f"Failed to connect to {mac_address}: {e}")
         return None
 
-def start_tcp_server(bt_sock):
+def start_tcp_server(bt_sock, tcp_sock):
     """Start a TCP server that forwards data between TCP clients and Bluetooth socket."""
     try:
-        # Create TCP server socket
-        tcp_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         tcp_sock.bind((TCP_HOST, TCP_PORT))
         tcp_sock.listen(1)  # Allow only 1 client at a time
         print(f"TCP server started on port {TCP_PORT}. Waiting for client connection...")
@@ -99,30 +82,48 @@ def handle_tcp_to_bt(client_sock, bt_sock):
         print(f"Error forwarding TCP to Bluetooth: {e}")
         client_sock.close()
 
-def main():
-    # Load MAC address from file, or scan if it doesn't exist
-    mac_address = load_mac_address()
-    
-    if not mac_address:
-        # Connect to the Bluetooth device
-        mac_address = asyncio.run(find_bluetooth_device(DEVICE_NAME))
+def graceful_shutdown(bt_sock, tcp_sock=None):
+    print("Shutting down gracefully...")
+    if bt_sock:
+        bt_sock.close()
+        print("Bluetooth socket closed.")
+    if tcp_sock:
+        tcp_sock.close()
+        print("TCP server socket closed.")
+    os._exit(0)  # Forcefully exit the program
 
-        if not mac_address:
-            print("Failed to find Bluetooth device. Exiting...")
-            return
-        
-        # Save the found MAC address to file
-        save_mac_address(mac_address)
+
+def main():
+    mac_address = None
+
+    # Attempt to find a Bluetooth device from the list of names
+    for device_name in DEVICE_NAMES:
+        print(f"Attempting to find Bluetooth device: {device_name}")
+        mac_address = asyncio.run(find_bluetooth_device(device_name))
+
+        if mac_address:
+            print(f"Found Bluetooth device: {device_name}")
+            break
+    else:
+        print("Failed to find any Bluetooth device. Exiting...")
+        return
 
     # Connect to the Bluetooth device using the found MAC address
     bt_socket = connect_bluetooth(mac_address, DATA_CHANNEL_ID)
-
     if not bt_socket:
         print("Failed to connect to Bluetooth device. Exiting...")
         return
 
+    # Create the TCP server socket
+    tcp_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
+    # Register signal handlers for graceful shutdown
+    signal.signal(signal.SIGINT, lambda sig, frame: graceful_shutdown(bt_socket, tcp_socket))
+    signal.signal(signal.SIGTERM, lambda sig, frame: graceful_shutdown(bt_socket, tcp_socket))
+
     # Start the TCP server and wait for client connections
-    start_tcp_server(bt_socket)
+    start_tcp_server(bt_socket, tcp_socket)
+
 
 if __name__ == "__main__":
     main()
