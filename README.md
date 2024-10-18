@@ -38,9 +38,6 @@
    The script should connect to the radio and start a TCP server on port 8001.
 
 6. Connect via software:  
-   
-   ```sh
-   pip install bleak
-   ```
+
    You should now be able to setup your software like PinPoint APRS that supports TNCs over TCP/IP by using and IP address of 127.0.0.1 and port 8001
 
