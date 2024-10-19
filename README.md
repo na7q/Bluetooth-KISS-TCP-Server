@@ -1,4 +1,4 @@
-### Installation
+### Installation and Use
 
 1. Clone the repository:
    
@@ -41,3 +41,20 @@
 
    You should now be able to setup your software like PinPoint APRS that supports TNCs over TCP/IP by using and IP address of 127.0.0.1 and port 8001
 
+
+### Use after closing
+
+1. Starting the script:
+   Each time you want to start the script again, you'll want to navigate to the script directoty from the command prompy and enter in the Python virtual environment by running the following command
+   
+   ```sh
+   venv\Scripts\activate  
+   ```
+
+2. Start the server:  
+
+   If you haven't already, pair your radio to your computer via Bluetooth and then run the script
+   
+   ```sh
+   python.exe server.py
+   ```
