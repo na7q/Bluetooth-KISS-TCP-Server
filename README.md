@@ -45,7 +45,7 @@
 ### Use after closing
 
 1. Starting the script:
-   Each time you want to start the script again, you'll want to navigate to the script directoty from the command prompy and enter in the Python virtual environment by running the following command
+   Each time you want to start the script again, you'll want to navigate to the script directoty from the command prompt and enter in the Python virtual environment by running the following command:
    
    ```sh
    venv\Scripts\activate  
@@ -58,3 +58,8 @@
    ```sh
    python.exe server.py
    ```
+
+
+## Thanks
+
+Big thanks to [NA7Q](https://github.com/na7q/Bluetooth-KISS-TCP-Server) for the origial work on this.
