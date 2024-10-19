@@ -4,7 +4,7 @@ import asyncio
 from bleak import BleakScanner
 import os
 import signal
-
+from threading import Event
 
 # Bluetooth connection settings
 DEVICE_NAMES = ["UV-PRO", "VR-N76", "GA-5WB"] # List with possible device names
@@ -13,6 +13,9 @@ DATA_CHANNEL_ID = 3      # Replace with your device's RFCOMM channel
 # TCP Server settings
 TCP_HOST = '0.0.0.0'  # Listen on all interfaces
 TCP_PORT = 8001       # TCP port number
+
+# Create a global shutdown event
+shutdown_event = Event()
 
 async def find_bluetooth_device(device_name):
     """Scan for Bluetooth devices and return the MAC address of the specified device."""
@@ -43,54 +46,77 @@ def connect_bluetooth(mac_address, channel):
 def start_tcp_server(bt_sock, tcp_sock):
     """Start a TCP server that forwards data between TCP clients and Bluetooth socket."""
     try:
+        tcp_sock.settimeout(1.0)  # Set a timeout to allow periodic checks for shutdown_event
         tcp_sock.bind((TCP_HOST, TCP_PORT))
-        tcp_sock.listen(1)  # Allow only 1 client at a time
+        tcp_sock.listen(1)
         print(f"TCP server started on port {TCP_PORT}. Waiting for client connection...")
 
-        while True:
-            client_sock, client_address = tcp_sock.accept()  # Accept TCP client connection
-            print(f"Client connected from {client_address}")
+        while not shutdown_event.is_set():
+            try:
+                client_sock, client_address = tcp_sock.accept()  # Accept TCP client connection
+                print(f"Client connected from {client_address}")
 
-            # Create separate threads to handle Bluetooth <-> TCP data transfer
-            threading.Thread(target=handle_bt_to_tcp, args=(bt_sock, client_sock)).start()
-            threading.Thread(target=handle_tcp_to_bt, args=(client_sock, bt_sock)).start()
+                # Create separate daemon threads to handle Bluetooth <-> TCP data transfer
+                bt_to_tcp_thread = threading.Thread(target=handle_bt_to_tcp, args=(bt_sock, client_sock), daemon=True)
+                tcp_to_bt_thread = threading.Thread(target=handle_tcp_to_bt, args=(client_sock, bt_sock), daemon=True)
+
+                bt_to_tcp_thread.start()
+                tcp_to_bt_thread.start()
+            except socket.timeout:
+                continue  # Timeout occurred, loop again to check for shutdown_event
 
     except Exception as e:
         print(f"TCP Server error: {e}")
 
+
+
 def handle_bt_to_tcp(bt_sock, client_sock):
     """Forward data from Bluetooth to the TCP client."""
     try:
-        while True:
-            data = bt_sock.recv(1024)  # Receive data from Bluetooth device
-            if data:
-                print(f"Received from Bluetooth: {data}")
-                client_sock.sendall(data)  # Send the data to the TCP client
+        bt_sock.settimeout(1.0)  # Set a timeout to allow periodic checks for shutdown_event
+        while not shutdown_event.is_set():
+            try:
+                data = bt_sock.recv(1024)  # Receive data from Bluetooth device
+                if data:
+                    print(f"Received from Bluetooth: {data}")
+                    client_sock.sendall(data)  # Send the data to the TCP client
+            except socket.timeout:
+                continue  # Timeout occurred, loop again to check for shutdown_event
     except Exception as e:
         print(f"Error forwarding Bluetooth to TCP: {e}")
+    finally:
         client_sock.close()
 
 def handle_tcp_to_bt(client_sock, bt_sock):
     """Forward data from the TCP client to the Bluetooth device."""
     try:
-        while True:
-            data = client_sock.recv(1024)  # Receive data from TCP client
-            if data:
-                print(f"Received from TCP client: {data}")
-                bt_sock.sendall(data)  # Send the data to the Bluetooth device
+        client_sock.settimeout(1.0)  # Set a timeout to allow periodic checks for shutdown_event
+        while not shutdown_event.is_set():
+            try:
+                data = client_sock.recv(1024)  # Receive data from TCP client
+                if data:
+                    print(f"Received from TCP client: {data}")
+                    bt_sock.sendall(data)  # Send the data to the Bluetooth device
+            except socket.timeout:
+                continue  # Timeout occurred, loop again to check for shutdown_event
     except Exception as e:
         print(f"Error forwarding TCP to Bluetooth: {e}")
+    finally:
         client_sock.close()
+
+
 
 def graceful_shutdown(bt_sock, tcp_sock=None):
     print("Shutting down gracefully...")
+    shutdown_event.set()  # Signal all threads to stop
     if bt_sock:
         bt_sock.close()
         print("Bluetooth socket closed.")
     if tcp_sock:
         tcp_sock.close()
         print("TCP server socket closed.")
-    os._exit(0)  # Forcefully exit the program
+    os._exit(0)  # Forcefully exit the program (in case threads are stuck)
+
 
 
 def main():
@@ -123,6 +149,7 @@ def main():
 
     # Start the TCP server and wait for client connections
     start_tcp_server(bt_socket, tcp_socket)
+
 
 
 if __name__ == "__main__":
