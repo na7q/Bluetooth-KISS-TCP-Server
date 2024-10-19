@@ -58,3 +58,8 @@
    ```sh
    python.exe server.py
    ```
+
+
+## Thanks
+
+Big thanks to [NA7Q]([https://github.com/meshtastic](https://github.com/na7q/Bluetooth-KISS-TCP-Server) for the origial work on this
