@@ -8,7 +8,7 @@ from threading import Event
 
 # Bluetooth connection settings
 DEVICE_NAMES = ["UV-PRO", "VR-N76", "GA-5WB"]  # List with possible device names
-DATA_CHANNEL_ID = 1  # Replace with your device's RFCOMM channel
+DATA_CHANNEL_ID = 3  # Replace with your device's RFCOMM channel
 
 # TCP Server settings
 TCP_HOST = '0.0.0.0'  # Listen on all interfaces
