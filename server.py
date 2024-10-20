@@ -7,27 +7,50 @@ import signal
 from threading import Event
 
 # Bluetooth connection settings
-DEVICE_NAMES = ["UV-PRO", "VR-N76", "GA-5WB"] # List with possible device names
-DATA_CHANNEL_ID = 3      # Replace with your device's RFCOMM channel
+DEVICE_NAMES = ["UV-PRO", "VR-N76", "GA-5WB"]  # List with possible device names
+DATA_CHANNEL_ID = 1  # Replace with your device's RFCOMM channel
 
 # TCP Server settings
 TCP_HOST = '0.0.0.0'  # Listen on all interfaces
-TCP_PORT = 8001       # TCP port number
+TCP_PORT = 8001  # TCP port number
 
 # Create a global shutdown event
 shutdown_event = Event()
 
-async def find_bluetooth_device(device_name):
-    """Scan for Bluetooth devices and return the MAC address of the specified device."""
-    print("Scanning for Bluetooth devices...")
-    devices = await BleakScanner.discover()
 
-    for device in devices:
-        print(f"Found Bluetooth device: {device.name} - {device.address}")
-        if device.name == device_name:
-            return device.address
+async def find_bluetooth_device(device_name_list, scan_retries=3, scan_timeout=10):
+    """
+    Scan for Bluetooth devices and return the MAC address of the first matching device name.
+    Allows partial name matching and retrying if the device is not found.
 
-    print(f"Device '{device_name}' not found.")
+    Args:
+        device_name_list (list): List of possible device names to match.
+        scan_retries (int): Number of times to retry the scan.
+        scan_timeout (int): Timeout in seconds for each scan attempt.
+
+    Returns:
+        str or None: The MAC address of the found device or None if not found.
+    """
+    for attempt in range(scan_retries):
+        print(f"Scanning for Bluetooth devices (Attempt {attempt + 1}/{scan_retries})...")
+
+        try:
+            devices = await BleakScanner.discover(timeout=scan_timeout)
+
+            for device in devices:
+                print(f"Found Bluetooth device: {device.name} - {device.address}")
+                for device_name in device_name_list:
+                    # Use partial matching (case-insensitive)
+                    if device.name and device_name.lower() in device.name.lower():
+                        print(f"Matched device '{device.name}' with {device_name}.")
+                        return device.address
+
+            print(f"No matching devices found in this attempt.")
+
+        except Exception as e:
+            print(f"Error during Bluetooth scan: {e}")
+
+    print(f"Failed to find any matching Bluetooth device after {scan_retries} attempts.")
     return None
 
 
@@ -42,6 +65,7 @@ def connect_bluetooth(mac_address, channel):
     except Exception as e:
         print(f"Failed to connect to {mac_address}: {e}")
         return None
+
 
 def start_tcp_server(bt_sock, tcp_sock):
     """Start a TCP server that forwards data between TCP clients and Bluetooth socket."""
@@ -69,7 +93,6 @@ def start_tcp_server(bt_sock, tcp_sock):
         print(f"TCP Server error: {e}")
 
 
-
 def handle_bt_to_tcp(bt_sock, client_sock):
     """Forward data from Bluetooth to the TCP client."""
     try:
@@ -86,6 +109,7 @@ def handle_bt_to_tcp(bt_sock, client_sock):
         print(f"Error forwarding Bluetooth to TCP: {e}")
     finally:
         client_sock.close()
+
 
 def handle_tcp_to_bt(client_sock, bt_sock):
     """Forward data from the TCP client to the Bluetooth device."""
@@ -105,7 +129,6 @@ def handle_tcp_to_bt(client_sock, bt_sock):
         client_sock.close()
 
 
-
 def graceful_shutdown(bt_sock, tcp_sock=None):
     print("Shutting down gracefully...")
     shutdown_event.set()  # Signal all threads to stop
@@ -118,19 +141,13 @@ def graceful_shutdown(bt_sock, tcp_sock=None):
     os._exit(0)  # Forcefully exit the program (in case threads are stuck)
 
 
-
 def main():
     mac_address = None
 
-    # Attempt to find a Bluetooth device from the list of names
-    for device_name in DEVICE_NAMES:
-        print(f"Attempting to find Bluetooth device: {device_name}")
-        mac_address = asyncio.run(find_bluetooth_device(device_name))
+    # Attempt to find a Bluetooth device from the list of names with improved search
+    mac_address = asyncio.run(find_bluetooth_device(DEVICE_NAMES))
 
-        if mac_address:
-            print(f"Found Bluetooth device: {device_name}")
-            break
-    else:
+    if not mac_address:
         print("Failed to find any Bluetooth device. Exiting...")
         return
 
@@ -149,7 +166,6 @@ def main():
 
     # Start the TCP server and wait for client connections
     start_tcp_server(bt_socket, tcp_socket)
-
 
 
 if __name__ == "__main__":
